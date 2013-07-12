@@ -1,0 +1,309 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Dynamic Embed Player test</title>
+<link href="bootstrap/css/bootstrap.min.css" rel="stylesheet">
+<script src="http://code.jquery.com/jquery-1.10.2.min.js"></script>
+<script src="http://player.kaltura.com/mwEmbedLoader.php"></script>
+<style>
+	.transcriptHolder{
+		float:left;
+		width:600px;
+		border:thin solid black;
+		-moz-border-radius: 15px;
+		border-radius: 15px;
+		margin-left:10px;
+	}
+	.knownWord{
+		-moz-border-radius: 3px;
+		border-radius: 3px;
+		background-color:#DDD;
+	}
+	.highLightWord {
+		-moz-border-radius: 3px;
+		border-radius: 3px;
+		background-color:#CFC;
+	}
+	.highLightWordEst {
+		-moz-border-radius: 2px;
+		border-radius: 2px;
+		background-color:#FCC;
+	}
+	
+</style>
+<script>
+var syncUrl = 'SphinxKalturaTranscriptSync.php';
+var statusMsgs ={
+	'init': "Initial Setup",
+	'getSources' : "Getting video source from Kaltura",
+	'downloadAsset': "Downloading video asset from CDN",
+	'getAudio': "Extracting audio from video asset",
+	'alignment': "Aligning Text with audio",
+	'done': "All done, draw player + transcript"
+}
+var handleData = function( data ){
+	if( !data ){
+		outputError();
+	}
+	if( data['error'] ){
+		outputError( data['error'] );
+		return 
+	}
+	// check if we have final result: 
+	if( data['status'] == 'done' ){
+		outputStatus( 'done' );
+		outputPlayer( data );
+		return ;
+	}
+	// resonse should include jobKey
+	if( data['jobKey'] ){
+		outputStatus( data['status'] );
+		// update status in 2 seconds: 
+		setTimeout(function(){
+			$.get( syncUrl, { 'jobKey': data['jobKey'] }, handleData );
+		}, 2000)
+		return ;
+	}
+	// unkown error:
+	outputError();
+}
+function outputStatus( msg ){
+	if( statusMsgs[ msg ] ){
+		msg = statusMsgs[ msg ];
+	}
+	$('#content').empty().append(
+		$('<div/>').addClass('alert alert-info jobmessage').text( msg ).fadeIn()
+	)
+}
+function outputError( error ){
+	if( !error ){
+		error = 'Bad result from SphinxKalturaTranscriptSync.php';
+	}
+	$('#content').addClass('alert alert-error').text( error );
+}
+function outputPlayer( data ){
+	$('#content').append(
+		$('<div id="player" style="float:left;width:400px;height:300px;"></div>' + 
+			'<div class="transcriptHolder well">' +
+				'<h4>Transcript Accuracy: ' + ( Math.round( data['accuracy'] * 100 ) / 100 ) +'%</h4>' +
+				'Key:( <sapn class="highLightWord">accurate</span> ' +
+				'<span class="highLightWordEst"> estimation </span> )' +
+				'<br>' +
+			'</div>'
+		)
+	)
+	// iterate over data append transcript:
+	var html = '';
+	// convert object data into an array:
+	var alignedWords = $.map( data['alignment'], function(k,v){
+		return [k];
+	});
+	$.each(alignedWords, function(inx, wordObj){
+		html+= '<span ';
+		if( wordObj['s'] && !wordObj['est'] ){
+			html+=' class="knownWord" ';
+		}
+		html+='id="t' + inx + '">' + wordObj['w'] + '</span> ';
+	})
+	$('.transcriptHolder').append( html );
+	
+	kWidget.embed({
+		'targetId': 'player',
+		'wid' : '_' + $('#partner_id').val(),
+		'entry_id': $('#entry_id').val(),
+		'uiconf_id': $('#uiconf_id').val(),
+		'readyCallback': function( playerId ){
+			var kdp = $('#' + playerId)[0];
+			$('#content .jobmessage').fadeOut();
+			// bind player playhead updates 
+			var wordInx = 0;
+			var highLightSet = [];
+			var inRange = function( time, word ){
+				try{
+					return ( word['s'] < time && 
+							word['e'] > time ); 
+				} catch ( e ){
+					return false;
+				}
+			}
+			
+			kdp.kBind('playerUpdatePlayhead', function( currentTime ){
+				// unlight anything no longer in range:
+				$.each( highLightSet, function(inx, hWordInx){
+					if( ! inRange(currentTime, alignedWords[ hWordInx ] ) ){
+						$('#t' + hWordInx ).removeClass('highLightWord highLightWordEst');
+						delete( highLightSet[ inx ] );
+					}
+				});
+				
+				// seek for current word:
+				var wordInx =0;
+				for( var i= wordInx ; i < alignedWords.length; i++ ){
+					if( inRange( currentTime,  alignedWords[ i ] ) ){
+						// check if the target is an estimation: 
+						var cName = ( alignedWords[ i ]['est'] ) ? 'highLightWordEst' : 'highLightWord'
+						// highligh words
+						$('#t' + i ).addClass( cName );
+						highLightSet.push( i );
+						wordInx = i;
+						break
+					}
+				}
+			})
+		}
+	})
+}
+$(document).ready(function(){
+	$('#syncTranscript').submit(function(){
+		var formData = {};
+		$("#syncTranscript input").each(function(){
+			formData[ $(this).attr('id') ] = $(this).val();
+		})
+		formData['transcript'] = $("#syncTranscript textarea").text();
+		$.ajax({
+			type: "POST",
+			url: syncUrl, 
+			data: formData,
+			dataType: 'json',
+			success: handleData
+		});
+		// hide the form: 
+		$('#syncTranscript').fadeOut();
+		// clear out the form set to loading: 
+		$('#content').text('loading..');
+		return false;
+	})
+	$('ul.samples textarea').hide();
+	// setup links
+	$('ul.samples a').click(function(){
+		var _this = this;
+		$('#content').empty();
+		$('#syncTranscript').fadeIn();
+		// update data: 
+		$.each(  ['entry_id', 'uiconf_id', 'partner_id'], function(i, type){
+			if( $(_this).attr('data-' + type) ){
+				$( '#' + type ).val( $(_this).attr('data-' + type ) );
+			}
+		})
+		
+		// all update child text area: 
+		$('#transcript').text( 
+			$(this).siblings('textarea').text()
+		)
+	})
+	// click sample 1 ( to populate inital settings )
+	if( $(location.hash).length ){
+		$(location.hash).click();
+	}else{
+		$('#tt1').click();
+	}
+})
+</script>
+
+<body style="padding:10px;">
+<h2 style="color:#888"> Sphix Sync Transcript Demo </h2>
+
+Select a sample or enter your own entry and transcript below:
+<ul class="samples">
+	<li><a href="#tt1" id="tt1" 
+	data-partner_id="243342"
+	data-uiconf_id="12905712"
+	data-entry_id="0_gymoofrb">Sample 1</a> -- Spoken text English Wikipedia article reading 
+	<textarea> Architecture from Wikipedia the free encyclopedia en.wikipedia.org 
+Architecture (from Latin, architectura and ultimately from Greek, "a master builder", from "chiefs, leader" , "builder, carpenter") is the art and science of designing buildings and 
+structures. A wider definition would include within its scope also the design of the total built 
+environment, from the macrolevel of town planning, urban design, and landscape architecture to the 
+microlevel of creating furniture. Architectural design usually must address both feasibility and 
+cost for the builder, as well as function and aesthetics for the user. Planned architecture often 
+manipulates space, volume, texture, light, shadow, or abstract elements in order to achieve pleasing 
+aesthetics. This distinguishes it from applied science or engineering, which usually concentrate 
+more on the functional and feasibility aspects of the design of constructions or structures. 
+In the field of building architecture, the skills demanded of an architect range from the more complex, 
+such as for a hospital or a stadium, to the apparently simpler, such as planning residential houses. 
+Many architectural works may be seen also as cultural and political symbols, and/or works of art.  
+The role of the architect, though changing, has been central to the successful (and sometimes less 
+than successful) design and implementation of pleasingly built environments in which people live. 
+Romans absorbed brightness and rituals based in Greek Architecture; the Temple and all Gods, the  
+Ágora (specific place for special or casual meeting), and, building the Colosseum of Rome, they  
+represent all orders, Doric, Ionic e Corinthian. Le Corbusier said: "You employ stone, wood, and  
+concrete, and with these materials you build houses and palaces: that is construction. Ingenuity  
+is at work. But suddenly you touch my heart, you do me good. I am happy and I say: "This is beautiful. 
+That is Architecture. Art enters in. This sound file and all text in the article are licensed under 
+ the GUN free documentation license available at www.gun.org/copyleft/fdl.htm
+</textarea>
+	
+	</li>
+	<li><a href="#tt2" id="tt2" 
+		data-partner_id="243342"
+		data-uiconf_id="12905712"
+		data-entry_id="0_cc4hlc19" >Sample 2</a> -- Altus
+	<textarea>We use Altus for two events. The primary event is called Insight, which is a technical conference that we've been putting on for about 12 years. We invite all our internal sales engineering folks, which is our pre sales folks that are responsible for assisting our sales reps in the field. We also invite our partners to the event. We have about 90 different sessions, ranging from 1 hour to 3 hours in length. As you can imagine, the biggest complaint that we get is people can't see all the sessions. One of the ways that we use Altus is to capture the content that people can't see, so that we can reuse that content when they get back to the field and view the sessions that they didn't get to see. So what this allows is an attendee, or person who didn't attend the event, to view content that was provided at the Insight technical conference. What the Altus vSearch tool does is allow a person to look for any spoken word that occurred during the conference and actually view that particular presentation. So an example would be, if somebody's looking for multitenancy, we can actually put the word in the vSearch tool and it can go specifically to those topics that were mentioned at the event and watch the presentation from the moment those words were spoken. This is a phenomenal tool for the person out in the field who has to look up particular topics and be an expert in literally seconds before he goes in front of a customer.
+	</textarea>
+	</li>
+
+	<li><a href="#tt3" id="tt3" 
+		data-partner_id="811441" 
+		data-uiconf_id="6679161" 
+		data-entry_id="1_3fxkoyn2"/>Sample 3</a> -- Kaltura platform overview, music and voice 
+		( <span style="color:red">bad accuracy </span>) 
+	<textarea>Video is everywhere In today's digital age, advanced video platforms serve as a powerful tool  
+	for reaching and expanding your audience, generating revenue, and creating more effective digital 
+communications. Kaltura provides the world's first and only open source video platform designed to  
+help you create value with video. Leading media companies, universities, and corporate business  
+leaders are leveraging Kaltura's platform to manage, publish, monetize, distribute, and analyze  
+their rich media content online and across all devices. Kaltura offers both commercial and open 
+source solutions.Customers can opt for Kaltura's fully hosted solutions or deploy the Kaltura 
+platform software on premise behind their own firewall. Media companies such as broadcasters, 
+publishers, content right holders and new-media companies use Kaltura to simplify publishing, 
+analyze content, distribute videos,  and efficiently integrate with existing systems. In  
+education, universities, colleges, and K-12 schools can enrich their learning environment and  
+extend their reach through distance education. Easy integration with learning management and  
+lecture capture systems as well as out-of-the-box applications such as Kaltura's media space video 
+portal make Kaltura the natural choice. As for large-scale enterprises and growing businesses,  
+Kaltura's video solutions increase the effectiveness of product marketing and improve internal 
+and external online communications and collaboration. Service providers are able to launch their  
+own video platform or add a media management layer to their offering using Kaltura. When it comes  
+to features, Kaltura's platform includes everything you need to manage your videos and other rich  
+media, and if that's not enough, we offer hundreds of APIs and advanced developer tools that enable 
+easy integration with all system features. Why should your organization use Kaltura? Our  
+flexibility and wide range of features guarantee that you stay ahead of the competition now and  
+for years to come. With contributions from thousands of community members, our rate of innovation  
+is unmatched. That translates into pure value for you. Hundreds of thousands of websites are  
+already using Kaltura.  Join them and experience the Kaltura advantage for yourself. Kaltura,  
+creating value with video. 
+	</textarea>
+	</li>
+</ul>
+<br><br>
+<div id="content">
+</div>
+<form id="syncTranscript" class="form-horizontal">
+	<div class="control-group">
+		<label class="control-label" for="partner_id">Partner ID</label>
+		<div class="controls">
+			<input type="text" id="partner_id" value="">
+		</div>
+	</div>
+	<div class="control-group">
+		<label class="control-label" for="entry_id">Entry ID</label>
+		<div class="controls">
+			<input type="text" id="entry_id" value="">
+		</div>
+	</div>
+	<div class="control-group">
+		<label class="control-label" for="uiconf_id">Player uiconf_id</label>
+		<div class="controls">
+			<input type="text" id="uiconf_id" value="">
+		</div>
+	</div>
+	<div class="control-group">
+		<label class="control-label" for="uiconf_id">Transcript</label>
+		<div class="controls">
+			<textarea type="text" style="width:800px;height:200px;" id="transcript" placeholder="transcript text">
+			</textarea>
+		</div>
+	</div>
+	<button type="submit" class="btn btn-primary">Sync Transcript</button>
+</form>
+</body>
+</html>
