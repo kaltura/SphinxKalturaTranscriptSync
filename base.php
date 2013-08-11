@@ -11,6 +11,8 @@ $gcFFMPEGPath = '/usr/bin/ffmpeg';
 // Sphix alignment path 
 $gcSphixAlignPath = '/path/to/sphix/alignment/folder';
 
+// If we allow adding jobs: 
+$gcEnableAddJobs = true;
 
 // check for local settings overrides:
 if( is_file(  dirname( __FILE__ ) . '/settings.php' ) ){
