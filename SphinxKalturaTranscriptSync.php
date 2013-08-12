@@ -47,14 +47,15 @@ class SphinxKalturaTranscriptSync {
 	
 	function addJob(){
 		global $gcEnableAddJobs;
-		// check if adding jobs is disabled; 
-		if( $gcEnableAddJobs === false ){
-			$this->errorOut("Adding jobs is disabled");
-		}
 		
 		// check if the job already exists: 
 		if( is_file( $this->getJobPath() ) ){
 			return ;
+		}
+		
+		// check if adding jobs is disabled; 
+		if( $gcEnableAddJobs === false ){
+			$this->errorOut("Adding jobs is disabled");
 		}
 		
 		// check that we have a free job slot ( only one active job allowed at a time for now )
