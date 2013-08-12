@@ -177,6 +177,8 @@ $(document).ready(function(){
 	// setup links
 	$('ul.samples a').click(function(){
 		var _this = this;
+		// remove errors:
+		$('.alert,.alert-info').removeClass( 'alert' ).removeClass( 'alert-info' );
 		$('#content').empty();
 		$('#syncTranscript').fadeIn();
 		// update data: 
