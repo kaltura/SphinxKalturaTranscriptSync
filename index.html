@@ -185,9 +185,8 @@ $(document).ready(function(){
 				$( '#' + type ).val( $(_this).attr('data-' + type ) );
 			}
 		})
-		
 		// all update child text area: 
-		$('#transcript').text( 
+		$('#transcript').val( 
 			$(this).siblings('textarea').text()
 		)
 	})
