@@ -159,7 +159,7 @@ $(document).ready(function(){
 		$("#syncTranscript input").each(function(){
 			formData[ $(this).attr('id') ] = $(this).val();
 		})
-		formData['transcript'] = $("#syncTranscript textarea").text();
+		formData['transcript'] = $('#transcript').text();
 		$.ajax({
 			type: "POST",
 			url: syncUrl, 
