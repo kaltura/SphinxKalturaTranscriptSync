@@ -1,5 +1,8 @@
 <?php 
-
+if( php_sapi_name() != 'cli' ){
+	echo "\n jobs should be run on the command line \n";
+	exit();
+}
 require_once( dirname( __FILE__ ) . '/base.php' );
 
 $mySpixJob = new SphinxKalturaTranscriptJob();
